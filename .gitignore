@@ -1,0 +1,35 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+*.pyd
+
+# Executables
+engine
+engine.exe
+
+# Build directory (Ignore all compiler artifacts)
+build/
+.cmake/
+
+# IDE files
+.vscode/
+.idea/
+
+# Python artifacts
+__pycache__/
+*.pyc
+.venv/
