@@ -110,6 +110,38 @@ namespace Engine {
                 .disabled_if_adjacent = false, .can_capture_friendly = false, .is_royal = true, .is_invulnerable = false
             }},
 
+            // 84. Map Standard Knight [Kn]
+            { KNIGHT, {
+                .primary_pattern = MovePattern::LEAP, .primary_range = 1,
+                .special_pattern = MovePattern::NONE, .special_min_range = 0, .special_max_range = 0,
+                .effect = CaptureEffect::STANDARD,
+                .disabled_if_adjacent = false, .can_capture_friendly = false, .is_royal = false, .is_invulnerable = false
+            }},
+
+            // 85. Map Standard Bishop [Bi]
+            { BISHOP, {
+                .primary_pattern = MovePattern::SLIDE, .primary_range = 99, // 99 represents Infinite range
+                .special_pattern = MovePattern::NONE, .special_min_range = 0, .special_max_range = 0,
+                .effect = CaptureEffect::STANDARD,
+                .disabled_if_adjacent = false, .can_capture_friendly = false, .is_royal = false, .is_invulnerable = false
+            }},
+
+            // 86. Map Standard Rook [Ro]
+            { ROOK, {
+                .primary_pattern = MovePattern::SLIDE, .primary_range = 99, 
+                .special_pattern = MovePattern::NONE, .special_min_range = 0, .special_max_range = 0,
+                .effect = CaptureEffect::STANDARD,
+                .disabled_if_adjacent = false, .can_capture_friendly = false, .is_royal = false, .is_invulnerable = false
+            }},
+
+            // 87. Map Standard Queen [Qu]
+            { QUEEN, {
+                .primary_pattern = MovePattern::SLIDE, .primary_range = 99,
+                .special_pattern = MovePattern::NONE, .special_min_range = 0, .special_max_range = 0,
+                .effect = CaptureEffect::STANDARD,
+                .disabled_if_adjacent = false, .can_capture_friendly = false, .is_royal = false, .is_invulnerable = false
+            }},
+
             // 83. Map Jester [Je]
             { JESTER, {
                 .primary_pattern = MovePattern::STEP, .primary_range = 1,

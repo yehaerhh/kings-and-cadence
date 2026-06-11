@@ -2,6 +2,8 @@
 #include "bitboard.hpp"
 #include "types.hpp"
 #include "zobrist.hpp"
+#include "move.hpp"
+#include "geometry.hpp"
 #include <vector>
 
 namespace Engine {
@@ -85,6 +87,81 @@ namespace Engine {
             // The compiler will inline this into blazing fast assembly.
             remove_piece(c, p, from_index);
             add_piece(c, p, to_index);
+        }
+
+        // 124, 129 & 149+. The Master Move Compiler (Now with Macro-Chain Support)
+        inline void execute_move(const Move& m, const BoardGeometry& geo, const std::vector<int>& macro_chain = {}) {
+            Color us = turn;
+            Color them = (us == WHITE) ? BLACK : WHITE;
+
+            int from = m.get_from();
+            int to = m.get_to();
+            PieceID piece = m.get_piece();
+            PieceID captured = m.get_captured();
+            MoveFlag flag = m.get_flag();
+
+            // 1. Remove the moving piece from its origin
+            remove_piece(us, piece, from);
+
+            // 2. Handle Complex Effects
+            if (flag == FLAG_DISPLACE) {
+                // Harpooner Pull
+                auto [fx, fy] = geo.index_to_coord(from);
+                auto [tx, ty] = geo.index_to_coord(to);
+                int dx = (fx > tx) ? 1 : (fx < tx) ? -1 : 0;
+                int dy = (fy > ty) ? 1 : (fy < ty) ? -1 : 0;
+                
+                int landing_idx = geo.coord_to_index(tx + (dx * 2), ty + (dy * 2));
+                
+                remove_piece(them, captured, to);
+                add_piece(them, captured, landing_idx);
+                add_piece(us, piece, from); // Harpooner stays put
+            }
+            else if (flag == FLAG_SPLASH) {
+                if (piece == CULVERIN) {
+                    // Artillery Strike
+                    remove_piece(them, captured, to); 
+                    add_piece(us, piece, from); 
+                }
+                else if (piece == POWDER_KEG) {
+                    // Kamikaze Blast
+                    auto [tx, ty] = geo.index_to_coord(to);
+                    for (int x = -1; x <= 1; ++x) {
+                        for (int y = -1; y <= 1; ++y) {
+                            int nx = tx + x, ny = ty + y;
+                            if (nx >= 0 && nx < geo.active_width && ny >= 0 && ny < geo.active_height) {
+                                int blast_idx = geo.coord_to_index(nx, ny);
+                                PieceID w_piece = get_piece_at(blast_idx, WHITE);
+                                PieceID b_piece = get_piece_at(blast_idx, BLACK);
+                                if (w_piece != EMPTY) remove_piece(WHITE, w_piece, blast_idx);
+                                if (b_piece != EMPTY) remove_piece(BLACK, b_piece, blast_idx);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (flag == FLAG_CHAIN_DASH) {
+                // Bandit Multi-Kill: Wipe every piece in the recursive chain!
+                for (int target_idx : macro_chain) {
+                    PieceID cap = get_piece_at(target_idx, them);
+                    if (cap != EMPTY) {
+                        remove_piece(them, cap, target_idx);
+                    }
+                }
+                add_piece(us, piece, to); // Land the Bandit at the final destination
+            }
+            else {
+                // Standard Move / Standard Capture
+                if (flag == FLAG_CAPTURE && captured != EMPTY) {
+                    remove_piece(them, captured, to);
+                }
+                add_piece(us, piece, to);
+            }
+
+            // 3. Swap Turn (Unless a Chain Dash resets the turn!)
+            if (flag != FLAG_CHAIN_DASH) {
+                turn = them;
+            }
         }
     };
 
