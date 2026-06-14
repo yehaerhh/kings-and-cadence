@@ -1,11 +1,14 @@
 #pragma once
 #include "state.hpp"
-#include <cmath> // Needed for std::abs
+#include "movegen.hpp"
+#include <cmath>
+#include <iostream>
 
 namespace Engine::Eval {
 
-    // 190 & 191: Define standard and custom material values
-    const int VAL_PEASANT   = 100;
+    // Standard and custom material values
+    const int VAL_PAWN      = 100;
+    const int VAL_PEASANT   = 70;
     const int VAL_KNIGHT    = 300;
     const int VAL_BISHOP    = 320;   
     const int VAL_ROOK      = 500;   
@@ -16,13 +19,15 @@ namespace Engine::Eval {
     const int VAL_BANDIT    = 450;
     const int VAL_HARPOONER = 350;
     const int VAL_CULVERIN  = 400;
-    const int VAL_POWDER_KEG= 200;   
+    const int VAL_POWDER_KEG= 200; 
+    const int VAL_PONTIFF   = 700; 
+    const int VAL_SOLDIER   = 200; 
     const int VAL_JESTER    = 0;
 
-    // Helper to map PieceID to Value
     inline int get_piece_value(PieceID piece) {
         switch(piece) {
             case PEASANT:   return VAL_PEASANT;
+            case PAWN:      return VAL_PAWN;
             case KNIGHT:    return VAL_KNIGHT;
             case BISHOP:    return VAL_BISHOP; 
             case ROOK:      return VAL_ROOK;   
@@ -34,13 +39,13 @@ namespace Engine::Eval {
             case HARPOONER: return VAL_HARPOONER;
             case CULVERIN:  return VAL_CULVERIN;
             case POWDER_KEG:return VAL_POWDER_KEG;
+            case PONTIFF :  return VAL_PONTIFF;
             case JESTER:    return VAL_JESTER;
             default:        return 0;
         }
     }
 
-    // --- ARCHITECTURAL FIX 2: Piece-Specific Positional AI ---
-    // This tells the search algorithm WHERE pieces belong on the board.
+    // Dynamic Piece-Square Positional Bonus
     inline int get_positional_bonus(int index, const BoardGeometry& geo, PieceID piece) {
         if (piece == JESTER || piece == POWDER_KEG) return 0;
 
@@ -52,110 +57,94 @@ namespace Engine::Eval {
         float dist_y = std::abs(y - center_y);
         float max_dist = center_x + center_y; 
         
-        // Proximity is 1.0 at dead center, 0.0 at the extreme corners
         float proximity = 1.0f - ((dist_x + dist_y) / max_dist);
         
         switch(piece) {
             case PEASANT:
-            case KNIGHT:
-                // Minor pieces and pawns MUST fight for the center early! (+60 max)
-                return static_cast<int>(proximity * 60.0f);
-            case BISHOP:
-                // Bishops like long diagonals cutting through the center (+40 max)
-                return static_cast<int>(proximity * 40.0f);
+            case KNIGHT:    return static_cast<int>(proximity * 60.0f);
+            case BISHOP:    return static_cast<int>(proximity * 40.0f);
+            case PONTIFF:   return static_cast<int>(proximity * 40.0f);
             case QUEEN:
             case ROOK:
-            case TOWER:
-                // Major pieces should develop, but aren't desperate for dead center (+10 max)
-                return static_cast<int>(proximity * 10.0f);
+            case TOWER:     return static_cast<int>(proximity * 10.0f);
             case KING:
-            case REGENT:
-                // THE COWARD CLAUSE: The King must hide! 
-                // Massive penalty (-150) for walking into the center of the board.
-                return static_cast<int>(proximity * -150.0f);
-            default:
-                return static_cast<int>(proximity * 20.0f);
+            case REGENT:    return static_cast<int>(proximity * -150.0f); // Coward clause
+            default:        return static_cast<int>(proximity * 20.0f);
         }
     }
 
-    // 195. Dynamic Threat and Vulnerability Scanning
+    // Dynamic Threat Scanner
     inline int evaluate_threats(const BoardState& board, const BoardGeometry& geo) {
         int penalty = 0;
 
-        for (int i = 0; i < geo.active_width * geo.active_height; ++i) {
-            PieceID w_piece = board.get_piece_at(i, WHITE);
-            PieceID b_piece = board.get_piece_at(i, BLACK);
-            auto [x, y] = geo.index_to_coord(i);
-
-            // --- WHITE THREATS ---
-            if (w_piece != EMPTY) {
-                if (w_piece == CULVERIN && y + 1 < geo.active_height) {
-                    if (board.get_piece_at(geo.coord_to_index(x, y + 1), WHITE) != EMPTY) {
-                        penalty -= 150; 
-                    }
-                } else if (w_piece == KING) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            if (dx == 0 && dy == 0) continue;
-                            int nx = x + dx, ny = y + dy;
-                            if (nx >= 0 && nx < geo.active_width && ny >= 0 && ny < geo.active_height) {
-                                if (board.get_piece_at(geo.coord_to_index(nx, ny), WHITE) == POWDER_KEG) {
-                                    penalty -= 500; 
-                                }
-                            }
-                        }
-                    }
-                }
+        // --- WHITE THREATS ---
+        Bitboard192 w_culv = board.pieces[WHITE][CULVERIN];
+        while(w_culv.popcount() > 0) {
+            int idx = w_culv.lsb(); w_culv.clear_bit(idx);
+            auto [x, y] = geo.index_to_coord(idx);
+            if (y + 1 < geo.active_height && board.get_piece_at(geo.coord_to_index(x, y + 1), WHITE) != EMPTY) {
+                penalty -= 150; 
             }
+        }
 
-            // --- BLACK THREATS ---
-            if (b_piece != EMPTY) {
-                if (b_piece == CULVERIN && y - 1 >= 0) {
-                    if (board.get_piece_at(geo.coord_to_index(x, y - 1), BLACK) != EMPTY) {
-                        penalty += 150; 
-                    }
-                } else if (b_piece == KING) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            if (dx == 0 && dy == 0) continue;
-                            int nx = x + dx, ny = y + dy;
-                            if (nx >= 0 && nx < geo.active_width && ny >= 0 && ny < geo.active_height) {
-                                if (board.get_piece_at(geo.coord_to_index(nx, ny), BLACK) == POWDER_KEG) {
-                                    penalty += 500; 
-                                }
-                            }
-                        }
+        Bitboard192 w_king = board.pieces[WHITE][KING];
+        if (w_king.popcount() > 0) {
+            int idx = w_king.lsb();
+            auto [x, y] = geo.index_to_coord(idx);
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < geo.active_width && ny >= 0 && ny < geo.active_height) {
+                        if (board.get_piece_at(geo.coord_to_index(nx, ny), WHITE) == POWDER_KEG) penalty -= 500;
                     }
                 }
             }
         }
+
+        // --- BLACK THREATS ---
+        Bitboard192 b_culv = board.pieces[BLACK][CULVERIN];
+        while(b_culv.popcount() > 0) {
+            int idx = b_culv.lsb(); b_culv.clear_bit(idx);
+            auto [x, y] = geo.index_to_coord(idx);
+            if (y - 1 >= 0 && board.get_piece_at(geo.coord_to_index(x, y - 1), BLACK) != EMPTY) {
+                penalty += 150; 
+            }
+        }
+
+        Bitboard192 b_king = board.pieces[BLACK][KING];
+        if (b_king.popcount() > 0) {
+            int idx = b_king.lsb();
+            auto [x, y] = geo.index_to_coord(idx);
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < geo.active_width && ny >= 0 && ny < geo.active_height) {
+                        if (board.get_piece_at(geo.coord_to_index(nx, ny), BLACK) == POWDER_KEG) penalty += 500;
+                    }
+                }
+            }
+        }
+
         return penalty;
     }
 
-    // 193 & 194: Combine Material and Positional Evaluation
+    // Combine Material, Positional, and Threat Evaluation
     inline int evaluate(const BoardState& board, const BoardGeometry& geo) {
         int score = 0;
 
-        // --- ARCHITECTURAL FIX 1: Explicit Bitboard Counting ---
-        // By removing the for loop, we guarantee C++ never tries to read an 
-        // undefined PieceID index, entirely preventing the memory overflow 
-        // that was causing all evaluations to silently crash to 0.
-        
+        // Raw Material Counters
         score += board.pieces[WHITE][PEASANT].popcount() * VAL_PEASANT;
         score -= board.pieces[BLACK][PEASANT].popcount() * VAL_PEASANT;
-
         score += board.pieces[WHITE][KNIGHT].popcount() * VAL_KNIGHT;
         score -= board.pieces[BLACK][KNIGHT].popcount() * VAL_KNIGHT;
-
         score += board.pieces[WHITE][BISHOP].popcount() * VAL_BISHOP;
         score -= board.pieces[BLACK][BISHOP].popcount() * VAL_BISHOP;
-
         score += board.pieces[WHITE][ROOK].popcount() * VAL_ROOK;
         score -= board.pieces[BLACK][ROOK].popcount() * VAL_ROOK;
-
         score += board.pieces[WHITE][QUEEN].popcount() * VAL_QUEEN;
         score -= board.pieces[BLACK][QUEEN].popcount() * VAL_QUEEN;
-
         score += board.pieces[WHITE][KING].popcount() * VAL_KING;
         score -= board.pieces[BLACK][KING].popcount() * VAL_KING;
 
@@ -173,21 +162,68 @@ namespace Engine::Eval {
         score += board.pieces[WHITE][POWDER_KEG].popcount() * VAL_POWDER_KEG;
         score -= board.pieces[BLACK][POWDER_KEG].popcount() * VAL_POWDER_KEG;
 
-        // Dynamic Positional Value
-        for (int i = 0; i < geo.active_width * geo.active_height; ++i) {
-            PieceID w_piece = board.get_piece_at(i, WHITE);
-            if (w_piece != EMPTY) {
-                score += get_positional_bonus(i, geo, w_piece);
-            }
+        score +=board.pieces[WHITE][PONTIFF].popcount() * VAL_PONTIFF;
+        score -=board.pieces[BLACK][PONTIFF].popcount() * VAL_PONTIFF;
 
-            PieceID b_piece = board.get_piece_at(i, BLACK);
-            if (b_piece != EMPTY) {
-                score -= get_positional_bonus(i, geo, b_piece);
-            }
+        // Positional Scanner
+        Bitboard192 w_occ = board.occupancy[WHITE];
+        while (w_occ.popcount() > 0) {
+            int idx = w_occ.lsb(); w_occ.clear_bit(idx);
+            score += get_positional_bonus(idx, geo, board.get_piece_at(idx, WHITE));
+        }
+
+        Bitboard192 b_occ = board.occupancy[BLACK];
+        while (b_occ.popcount() > 0) {
+            int idx = b_occ.lsb(); b_occ.clear_bit(idx);
+            score -= get_positional_bonus(idx, geo, board.get_piece_at(idx, BLACK));
         }
         
         score += evaluate_threats(board, geo);
         
         return (board.turn == WHITE) ? score : -score;
+    }
+
+    // DIAGNOSTIC AI LOGGER
+    inline void print_eval_breakdown(const BoardState& board, const BoardGeometry& geo) {
+        int w_mat = 0, b_mat = 0;
+
+        w_mat += board.pieces[WHITE][PEASANT].popcount() * VAL_PEASANT;
+        b_mat += board.pieces[BLACK][PEASANT].popcount() * VAL_PEASANT;
+        w_mat += board.pieces[WHITE][KNIGHT].popcount() * VAL_KNIGHT;
+        b_mat += board.pieces[BLACK][KNIGHT].popcount() * VAL_KNIGHT;
+        w_mat += board.pieces[WHITE][BISHOP].popcount() * VAL_BISHOP;
+        b_mat += board.pieces[BLACK][BISHOP].popcount() * VAL_BISHOP;
+        w_mat += board.pieces[WHITE][ROOK].popcount() * VAL_ROOK;
+        b_mat += board.pieces[BLACK][ROOK].popcount() * VAL_ROOK;
+        w_mat += board.pieces[WHITE][QUEEN].popcount() * VAL_QUEEN;
+        b_mat += board.pieces[BLACK][QUEEN].popcount() * VAL_QUEEN;
+        w_mat += board.pieces[WHITE][KING].popcount() * VAL_KING;
+        b_mat += board.pieces[BLACK][KING].popcount() * VAL_KING;
+        // <-- ADDED: Diagnostic Pontiff Logging
+        w_mat += board.pieces[WHITE][PONTIFF].popcount() * VAL_PONTIFF;
+        b_mat += board.pieces[BLACK][PONTIFF].popcount() * VAL_PONTIFF;
+        w_mat += board.pieces[WHITE][PAWN].popcount() * VAL_PAWN;
+        b_mat += board.pieces[BLACK][PAWN].popcount() * VAL_PAWN;
+
+        int w_pos = 0, b_pos = 0;
+        Bitboard192 w_occ = board.occupancy[WHITE];
+        while (w_occ.popcount() > 0) {
+            int idx = w_occ.lsb(); w_occ.clear_bit(idx);
+            w_pos += get_positional_bonus(idx, geo, board.get_piece_at(idx, WHITE));
+        }
+
+        Bitboard192 b_occ = board.occupancy[BLACK];
+        while (b_occ.popcount() > 0) {
+            int idx = b_occ.lsb(); b_occ.clear_bit(idx);
+            b_pos += get_positional_bonus(idx, geo, board.get_piece_at(idx, BLACK));
+        }
+
+        std::cout << "\n--- AI EVALUATION BREAKDOWN ---" << std::endl;
+        std::cout << "White Material Score : " << w_mat << std::endl;
+        std::cout << "Black Material Score : " << b_mat << std::endl;
+        std::cout << "White Position Score : " << w_pos << std::endl;
+        std::cout << "Black Position Score : " << b_pos << std::endl;
+        std::cout << "Total Advantage      : " << evaluate(board, geo) << " (from active player POV)" << std::endl;
+        std::cout << "-------------------------------\n" << std::endl;
     }
 }

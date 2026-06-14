@@ -34,7 +34,7 @@ namespace Engine::HashEngine {
         hash ^= piece_keys[c][p][index];
     }
     
-    inline void toggle_side(uint64_t& hash) {
+    inline void toggle_turn(uint64_t& hash) {
         hash ^= side_key;
     }
 

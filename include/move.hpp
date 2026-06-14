@@ -28,21 +28,24 @@ namespace Engine {
         uint32_t data;
 
         Move(){}
-        // Constructor automatically bit-shifts the data into place
-        Move(int from, int to, PieceID piece, PieceID captured = EMPTY, MoveFlag flag = FLAG_NONE) {
-            data = (from & 0xFF) | 
-                   ((to & 0xFF) << 8) | 
-                   ((piece & 0xF) << 16) | 
-                   ((captured & 0xF) << 20) | 
-                   ((flag & 0xF) << 24);
+        // --- THE CONSTRUCTOR (Packing the bits) ---
+        // You MUST update the bit-shifts here so they don't overwrite each other!
+        Move(int f, int t, PieceID p, PieceID c = EMPTY, MoveFlag fl = FLAG_NONE) {
+            data = f | (t << 8) | (p << 16) | (c << 21) | (fl << 26);
         }
 
-        // Inline getters reverse the bit-shifts instantly
+        // --- THE GETTERS (Unpacking the bits) ---
         inline int get_from() const { return data & 0xFF; }
         inline int get_to() const { return (data >> 8) & 0xFF; }
-        inline PieceID get_piece() const { return static_cast<PieceID>((data >> 16) & 0xF); }
-        inline PieceID get_captured() const { return static_cast<PieceID>((data >> 20) & 0xF); }
-        inline MoveFlag get_flag() const { return static_cast<MoveFlag>((data >> 24) & 0xF); }
+        
+        // 0x1F allows up to 31.
+        inline PieceID get_piece() const { return static_cast<PieceID>((data >> 16) & 0x1F); }
+        
+        // Shifted from 20 to 21 to make room for the 5th piece bit!
+        inline PieceID get_captured() const { return static_cast<PieceID>((data >> 21) & 0x1F); }
+        
+        // Shifted from 24 to 26!
+        inline MoveFlag get_flag() const { return static_cast<MoveFlag>((data >> 26) & 0xF); }
     };
 
     // 107 & 140. MoveList upgraded to support MacroMoves

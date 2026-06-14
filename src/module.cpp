@@ -3,6 +3,7 @@
 #include "../include/geometry.hpp"
 #include "../include/state.hpp"
 #include "../include/search.hpp"
+#include "../include/zobrist.hpp"
 
 namespace py = pybind11;
 
@@ -17,7 +18,7 @@ std::string move_to_string(const Engine::Move& m, const Engine::BoardGeometry& g
 // 208 & 214. Wrapper for the core AI search with explicit Exception Catching
 Engine::Move search_best_move(Engine::BoardState& board, const Engine::BoardGeometry& geo, int depth) {
     try {
-        Engine::TranspositionTable tt(1048576); // Spin up the TT for the search
+        Engine::TranspositionTable tt(4194304); // Spin up the TT for the search
         return Engine::Search::get_best_move(board, geo, tt, depth);
     } catch (const std::exception& e) {
         // 214. Throw cleanly back to Python to prevent hard Segfaults
@@ -50,21 +51,33 @@ void execute_move_wrapper(Engine::BoardState& board, const Engine::BoardGeometry
 PYBIND11_MODULE(chess_engine, m) {
     m.doc() = "Kings and Cadence Core AI Engine - C++ Backend";
 
+    Engine::HashEngine::init_zobrist();
+
     // --- THE FIX: Restore Explicit Color Enum Registration ---
     py::enum_<Engine::Color>(m, "Color", py::arithmetic())
         .value("WHITE", Engine::WHITE)
         .value("BLACK", Engine::BLACK)
         .export_values();
     
-    // --- EXPLICIT ENUM REGISTRATION (Standard + Custom) ---
+    // --- EXPLICIT ENUM REGISTRATION (100% Parity with types.hpp) ---
     py::enum_<Engine::PieceID>(m, "PieceID", py::arithmetic())
-        .value("PEASANT", Engine::PEASANT) // Your Pawn
-        .value("KNIGHT", Engine::KNIGHT)
-        .value("BISHOP", Engine::BISHOP)
-        .value("ROOK", Engine::ROOK)
-        .value("QUEEN", Engine::QUEEN)
         .value("KING", Engine::KING)
-        .value("BANDIT", Engine::BANDIT)   // Keep custom pieces bound!
+        .value("QUEEN", Engine::QUEEN)
+        .value("ROOK", Engine::ROOK)
+        .value("BISHOP", Engine::BISHOP)
+        .value("KNIGHT", Engine::KNIGHT)
+        .value("PAWN", Engine::PAWN)
+        .value("PEASANT", Engine::PEASANT)
+        .value("SOLDIER", Engine::SOLDIER)
+        .value("BANDIT", Engine::BANDIT)
+        .value("CULVERIN", Engine::CULVERIN)
+        .value("HARPOONER", Engine::HARPOONER)
+        .value("POWDER_KEG", Engine::POWDER_KEG)
+        .value("TOWER", Engine::TOWER)
+        .value("REGENT", Engine::REGENT)
+        .value("JESTER", Engine::JESTER)
+        .value("PONTIFF", Engine::PONTIFF)
+        .value("EMPTY", Engine::EMPTY)
         .export_values();
 
     // Expose BoardGeometry
@@ -91,11 +104,13 @@ PYBIND11_MODULE(chess_engine, m) {
     py::class_<Engine::BoardState>(m, "BoardState")
         .def(py::init<>())
         .def_readwrite("turn", &Engine::BoardState::turn)
+        .def_readwrite("castling_rights", &Engine::BoardState::castling_rights)
         .def("add_piece", &Engine::BoardState::add_piece)
-        .def("get_piece_at", &Engine::BoardState::get_piece_at);
-
+        .def("get_piece_at", &Engine::BoardState::get_piece_at)
+        .def("clone", [](const Engine::BoardState& b){return Engine::BoardState(b);}, "Creates a deep copy of the board state");
     // Bind the Move Generator & Execution
     m.def("generate_legal_moves", &generate_legal_moves_wrapper, "Get all legal moves");
+    m.def("is_in_check", &Engine::MoveGen::is_in_check, "Check if the specified color's Royal pieces are under attack");
     m.def("execute_move", &execute_move_wrapper, "Apply a move to the C++ BoardState");
 
     // --- THE FIX: RELEASE THE GIL ---

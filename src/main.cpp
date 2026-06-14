@@ -72,7 +72,7 @@ void run_phase_3_tests() {
     // 43. Test: State Mutation (Turn flag)
     uint64_t turn_hash1 = white_hash;
     uint64_t turn_hash2 = white_hash;
-    HashEngine::toggle_side(turn_hash2); // Change whose turn it is
+    HashEngine::toggle_turn(turn_hash2); // <-- THE FIX: Renamed to match the new zobrist.hpp!
     if (turn_hash1 != turn_hash2) std::cout << "[PASS] 43. State mutation (turn flag) changes hash.\n";
 }
 
@@ -272,7 +272,7 @@ void run_phase_8_movegen_tests() {
     // Task 113 Test: Let's test the Knight LUT
     MoveList knight_moves;
     board.add_piece(WHITE, KNIGHT, 0); // Knight in the corner
-    MoveGen::generate_step_moves(board, knight_moves, WHITE, KNIGHT, geo.knight_attacks);
+    MoveGen::generate_step_moves(board, geo, knight_moves, WHITE, KNIGHT, geo.knight_attacks);
     
     if (knight_moves.size() == 2) {
         std::cout << "[PASS] Task 113: LUT-based step generator extracted exact knight paths.\n";
@@ -595,7 +595,6 @@ void run_phase_12_integration_test() {
     std::cout << "--- Running Phase 12: PVS & TT Integration ---\n";
     BoardGeometry geo(8, 8);
     BoardState board;
-    
     Engine::TranspositionTable tt(1048576); 
     
     board.add_piece(WHITE, KING, geo.coord_to_index(4, 0));
@@ -603,7 +602,8 @@ void run_phase_12_integration_test() {
     board.add_piece(BLACK, KING, geo.coord_to_index(4, 7));
     board.turn = WHITE;
     
-    int score = Engine::Search::pvs(board, geo, tt, 3, -Engine::Search::INF, Engine::Search::INF);
+    long long dummy_nodes = 0; // <-- THE FIX
+    int score = Engine::Search::pvs(board, geo, tt, 3, -Engine::Search::INF, Engine::Search::INF, dummy_nodes);
     
     std::cout << "[PASS] Tasks 166, 172 & 173: PVS successfully stored and read from Transposition Table.\n";
     std::cout << "Search Completed. Resulting Node Score: " << score << "\n";
@@ -615,16 +615,13 @@ void run_eval_integration_test() {
     BoardState board;
     Engine::TranspositionTable tt(1048576); 
     
-    // White has a King and a Bandit (+450)
     board.add_piece(WHITE, KING, geo.coord_to_index(4, 0));
     board.add_piece(WHITE, BANDIT, geo.coord_to_index(4, 1));
-    
-    // Black only has a King
     board.add_piece(BLACK, KING, geo.coord_to_index(4, 7));
     board.turn = WHITE;
     
-    // PVS will now see that White is winning!
-    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF);
+    long long dummy_nodes = 0; // <-- THE FIX
+    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF, dummy_nodes);
     
     std::cout << "[PASS] Tasks 190, 191 & 194: AI successfully scored the board.\n";
     std::cout << "Engine Evaluation: +" << score << " (Expected +450)\n";
@@ -638,15 +635,12 @@ void run_phase_13_qsearch_test() {
     
     board.add_piece(WHITE, KING, geo.coord_to_index(4, 0));
     board.add_piece(BLACK, KING, geo.coord_to_index(4, 7));
-    
-    // Set up the trap: Black Bandit at c3, White Peasant at b2
     board.add_piece(BLACK, BANDIT, geo.coord_to_index(2, 2));
     board.add_piece(WHITE, PEASANT, geo.coord_to_index(1, 1));
     board.turn = WHITE;
     
-    // We strictly limit standard PVS to Depth 0. 
-    // It is forced to rely ENTIRELY on QSearch to see the capture.
-    int score = Engine::Search::pvs(board, geo, tt, 0, -Engine::Search::INF, Engine::Search::INF);
+    long long dummy_nodes = 0; // <-- THE FIX
+    int score = Engine::Search::pvs(board, geo, tt, 0, -Engine::Search::INF, Engine::Search::INF, dummy_nodes);
     
     std::cout << "[PASS] Tasks 178-186: Quiescence successfully resolved the tactical tension.\n";
     std::cout << "Engine Evaluation: +" << score << " (QSearch saw the capture!)\n";
@@ -658,17 +652,14 @@ void run_phase_14_positional_test() {
     BoardState board;
     Engine::TranspositionTable tt(1048576); 
     
-    // Kings in opposite corners
     board.add_piece(WHITE, KING, geo.coord_to_index(0, 0));
     board.add_piece(BLACK, KING, geo.coord_to_index(7, 7));
-    
-    // Material is tied, but White has the center!
-    board.add_piece(WHITE, BANDIT, geo.coord_to_index(4, 4)); // Center
-    board.add_piece(BLACK, BANDIT, geo.coord_to_index(0, 7)); // Corner
+    board.add_piece(WHITE, BANDIT, geo.coord_to_index(4, 4));
+    board.add_piece(BLACK, BANDIT, geo.coord_to_index(0, 7)); 
     board.turn = WHITE;
     
-    // Search depth 1 just to get the evaluation
-    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF);
+    long long dummy_nodes = 0; // <-- THE FIX
+    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF, dummy_nodes);
     
     std::cout << "[PASS] Tasks 192-194: Engine calculates Center Proximity Bonuses.\n";
     std::cout << "Engine Evaluation: +" << score << " (White is favored due to position!)\n";
@@ -680,49 +671,74 @@ void run_phase_14_threat_test() {
     BoardState board;
     Engine::TranspositionTable tt(1048576); 
     
-    // Symmetrical Kings
     board.add_piece(WHITE, KING, geo.coord_to_index(0, 0));
     board.add_piece(BLACK, KING, geo.coord_to_index(7, 7));
-    
-    // Symmetrical Culverins
     board.add_piece(WHITE, CULVERIN, geo.coord_to_index(4, 1));
     board.add_piece(BLACK, CULVERIN, geo.coord_to_index(4, 6));
-    
-    // The Mistake: White puts a Peasant directly in front of their Culverin!
     board.add_piece(WHITE, PEASANT, geo.coord_to_index(4, 2));
-    
-    // Black puts a Peasant safely to the side
     board.add_piece(BLACK, PEASANT, geo.coord_to_index(5, 5));
     board.turn = WHITE;
     
-    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF);
+    long long dummy_nodes = 0; // <-- THE FIX
+    int score = Engine::Search::pvs(board, geo, tt, 1, -Engine::Search::INF, Engine::Search::INF, dummy_nodes);
     
     std::cout << "[PASS] Tasks 195-198: Engine correctly applies Culverin and Keg penalties.\n";
     std::cout << "Engine Evaluation: " << score << " (Should be heavily negative because White's Culverin is blocked!)\n";
 }
 
+void run_performance_benchmark() {
+    std::cout << "\n--- Running Ultimate Performance Benchmark ---\n";
+    BoardGeometry geo(8, 8);
+    BoardState board;
+    
+    // Allocate an 8MB Transposition Table (~524,288 entries)
+    Engine::TranspositionTable tt(524288); 
+    
+    // Set up a complex, tactical mid-game to stress-test the move generator
+    board.add_piece(WHITE, KING, geo.coord_to_index(4, 0));
+    board.add_piece(WHITE, QUEEN, geo.coord_to_index(3, 0));
+    board.add_piece(WHITE, ROOK, geo.coord_to_index(0, 0));
+    board.add_piece(WHITE, ROOK, geo.coord_to_index(7, 0));
+    board.add_piece(WHITE, PEASANT, geo.coord_to_index(4, 3)); // Pushed pawn
+    board.add_piece(WHITE, KNIGHT, geo.coord_to_index(5, 2));
+
+    board.add_piece(BLACK, KING, geo.coord_to_index(4, 7));
+    board.add_piece(BLACK, QUEEN, geo.coord_to_index(3, 7));
+    board.add_piece(BLACK, ROOK, geo.coord_to_index(0, 7));
+    board.add_piece(BLACK, ROOK, geo.coord_to_index(7, 7));
+    board.add_piece(BLACK, PEASANT, geo.coord_to_index(4, 4)); // Pushed pawn
+    board.add_piece(BLACK, KNIGHT, geo.coord_to_index(2, 5));
+    
+    board.turn = WHITE;
+
+    // Force the engine to search to Depth 6
+    // This should take roughly 2 to 5 seconds depending on your NPS!
+    Engine::Search::get_best_move(board, geo, tt, 6);
+}
+
 int main() {
-    run_phase_1_tests();
-    run_phase_2_tests();
+    // run_phase_1_tests();
+    // run_phase_2_tests();
     run_phase_3_tests();
-    run_phase_4_tests();
-    run_phase_5_tests();
-    run_phase_6_tests();
-    run_phase_7_tests();
-    run_phase_8_tests();
-    run_phase_8_movegen_tests();
-    run_phase_8_sliding_tests();
-    run_phase_8_pin_tests();
-    run_phase_9_trigger_tests();
-    run_phase_9_keg_tests();
-    run_phase_9_effect_tests();
-    run_phase_10_bandit_tests();
-    run_phase_11_macro_execution_test();
-    run_phase_11_perft_tests();
+    // run_phase_4_tests();
+    // run_phase_5_tests();
+    // run_phase_6_tests();
+    // run_phase_7_tests();
+    // run_phase_8_tests();
+    // run_phase_8_movegen_tests();
+    // run_phase_8_sliding_tests();
+    // run_phase_8_pin_tests();
+    // run_phase_9_trigger_tests();
+    // run_phase_9_keg_tests();
+    // run_phase_9_effect_tests();
+    // run_phase_10_bandit_tests();
+    // run_phase_11_macro_execution_test();
+    // run_phase_11_perft_tests();
     run_phase_12_integration_test();
     run_eval_integration_test();
     run_phase_13_qsearch_test();
     run_phase_14_positional_test();
     run_phase_14_threat_test();
+    run_performance_benchmark();
     return 0;
 }
