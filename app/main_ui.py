@@ -8,13 +8,15 @@ import chess_engine
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, 
                              QLabel, QDialog, QPushButton, QHBoxLayout, 
-                             QStackedWidget, QSlider, QFrame)
+                             QStackedWidget, QSlider, QFrame, QComboBox)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QPixmap, QPainter
 from PyQt6.QtSvg import QSvgRenderer
 
 from board_canvas import BoardCanvas
 from engine_worker import EngineWorker
+from graveyard import GraveyardWidget
+# And make sure PieceCache is either in main_ui.py or imported if you moved it!
 
 
 class PieceCache:
@@ -44,6 +46,39 @@ class PieceCache:
             self.cache[key] = pixmap
             
         return self.cache[key]
+
+
+class GameSetupDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Game Setup")
+        self.setModal(True)
+        self.setFixedSize(300, 150)
+        self.setStyleSheet("background-color: #2C3E50; color: white;")
+        
+        layout = QVBoxLayout()
+        
+        label = QLabel("Select Board Size:")
+        label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(label)
+        
+        self.size_combo = QComboBox()
+        self.size_combo.addItems(["8x8 Classic", "10x10 Vanguard", "12x12 Grand"])
+        self.size_combo.setStyleSheet("""
+            QComboBox { background-color: #1A1A1A; color: white; font-size: 14px; padding: 5px; border-radius: 4px; }
+            QComboBox QAbstractItemView { background-color: #1A1A1A; color: white; selection-background-color: #1ABC9C; }
+        """)
+        layout.addWidget(self.size_combo)
+        
+        btn = QPushButton("⚔️ Start Game")
+        btn.setStyleSheet("""
+            QPushButton { background-color: #27AE60; font-size: 16px; font-weight: bold; border-radius: 4px; padding: 10px; }
+            QPushButton:hover { background-color: #2ECC71; }
+        """)
+        btn.clicked.connect(self.accept)
+        layout.addWidget(btn)
+        
+        self.setLayout(layout)
 
 class PromotionDialog(QDialog):
     def __init__(self, parent=None):
@@ -75,31 +110,24 @@ class PromotionDialog(QDialog):
         self.accept()
 
 
-# --- NEW COMPONENT: HOME MENU ---
 class HomeMenu(QWidget):
     def __init__(self, start_game_callback, open_settings_callback):
         super().__init__()
+        self.start_game_callback = start_game_callback # Save this for later!
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Main App Title
         title = QLabel("KINGS & CADENCE")
         title.setFont(QFont("Arial", 38, QFont.Weight.Bold))
         title.setStyleSheet("color: #E0E0E0; letter-spacing: 2px; margin-bottom: 30px;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        # Menu Button Styling Configuration
         button_style = """
             QPushButton {
-                background-color: #2C3E50;
-                color: #FFFFFF;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 14px;
-                min-width: 280px;
-                margin: 8px;
+                background-color: #2C3E50; color: #FFFFFF; font-size: 16px;
+                font-weight: bold; border-radius: 6px; padding: 14px;
+                min-width: 280px; margin: 8px;
             }
             QPushButton:hover { background-color: #34495E; }
             QPushButton:pressed { background-color: #1ABC9C; }
@@ -107,12 +135,12 @@ class HomeMenu(QWidget):
 
         btn_computer = QPushButton("🤖 Play vs Computer")
         btn_computer.setStyleSheet(button_style)
-        btn_computer.clicked.connect(lambda: start_game_callback(hotseat=False, play_black=False))
+        btn_computer.clicked.connect(lambda: self.trigger_game_setup(hotseat=False, play_black=False))
         layout.addWidget(btn_computer)
 
         btn_friend = QPushButton("🤝 Challenge a Friend (Local)")
         btn_friend.setStyleSheet(button_style)
-        btn_friend.clicked.connect(lambda: start_game_callback(hotseat=True, play_black=False))
+        btn_friend.clicked.connect(lambda: self.trigger_game_setup(hotseat=True, play_black=False))
         layout.addWidget(btn_friend)
 
         btn_settings = QPushButton("⚙️ Engine Settings")
@@ -121,6 +149,15 @@ class HomeMenu(QWidget):
         layout.addWidget(btn_settings)
 
         self.setLayout(layout)
+
+    def trigger_game_setup(self, hotseat, play_black):
+        """Pops up the board size dialog before launching the game."""
+        dialog = GameSetupDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Extract the integer from the dropdown text (e.g., "10x10 Vanguard" -> 10)
+            size_str = dialog.size_combo.currentText()
+            board_size = int(size_str.split("x")[0])
+            self.start_game_callback(hotseat, play_black, board_size)
 
 
 # --- NEW COMPONENT: SETTINGS MENU ---
@@ -215,17 +252,21 @@ class MainWindow(QMainWindow):
     def show_settings_view(self):
         self.stack.setCurrentIndex(1)
 
-    def launch_game_session(self, hotseat, play_black):
+    def launch_game_session(self, hotseat, play_black, board_size=8):
         """Prepares canvas, loads engine states, and switches visibility into active game frame."""
         self.hotseat_mode = hotseat
         self.play_black = play_black
+        
+        # Instantiate the Cache once per app lifecycle so it doesn't reload SVGs constantly
+        if not hasattr(self, 'piece_cache'):
+            self.piece_cache = PieceCache()
         
         # Read the current customized AI Depth out of the Settings view layer
         if self.stack.indexOf(self.settings_screen) != -1:
             self.ai_depth = self.settings_screen.get_depth()
 
         # Spin up Engine Core Variables
-        self.geo = chess_engine.BoardGeometry(8, 8)
+        self.geo = chess_engine.BoardGeometry(board_size, board_size)
         self.board = chess_engine.BoardState()
 
         # Build Game Runtime Main Interface Layout
@@ -243,9 +284,19 @@ class MainWindow(QMainWindow):
         self.info_panel.setFixedHeight(50)
         game_layout.addWidget(self.info_panel)
 
-        # Initialize Canvas Component
+        # --- NEW: ADD GRAVEYARDS ---
+        # Top Graveyard (Shows White pieces captured by Black)
+        self.top_graveyard = GraveyardWidget(self.piece_cache, chess_engine.Color.WHITE)
+        # Bottom Graveyard (Shows Black pieces captured by White)
+        self.bottom_graveyard = GraveyardWidget(self.piece_cache, chess_engine.Color.BLACK)
+        
+        game_layout.addWidget(self.top_graveyard)
+
+        # Initialize Canvas Component (NOW PASSING THE CACHE)
         self.canvas = BoardCanvas(self.geo, self.board, flip_board=self.play_black)
         game_layout.addWidget(self.canvas)
+        
+        game_layout.addWidget(self.bottom_graveyard)
 
         # Interface Navigation Panel bar (Exit/Reset Option)
         control_bar = QHBoxLayout()
@@ -299,29 +350,43 @@ class MainWindow(QMainWindow):
 
     def setup_initial_scenario(self):
         self.board.turn = chess_engine.Color.WHITE
+        size = self.geo.active_width # Get dynamic board size
 
-        for col in range(8):
+        # 1. Dynamic Front Line Setup
+        for col in range(size):
             b_idx = self.geo.coord_to_index(col, 1) 
-            w_idx = self.geo.coord_to_index(col, 6) 
+            w_idx = self.geo.coord_to_index(col, size - 2) # e.g. Row 6 for 8x8, Row 8 for 10x10
             
-            if col == 2 or col == 5:
+            # Keep special pieces centered relative to the board size
+            mid = size // 2
+            if col == mid - 2 or col == mid + 1:
                 self.board.add_piece(chess_engine.Color.WHITE, chess_engine.PieceID.PEASANT, w_idx)
                 self.board.add_piece(chess_engine.Color.BLACK, chess_engine.PieceID.PEASANT, b_idx)
-            elif col == 3 or col == 4:
+            elif col == mid - 1 or col == mid:
                 self.board.add_piece(chess_engine.Color.WHITE, chess_engine.PieceID.SOLDIER, w_idx)
                 self.board.add_piece(chess_engine.Color.BLACK, chess_engine.PieceID.SOLDIER, b_idx)
             else:
                 self.board.add_piece(chess_engine.Color.WHITE, chess_engine.PieceID.PAWN, w_idx)
                 self.board.add_piece(chess_engine.Color.BLACK, chess_engine.PieceID.PAWN, b_idx)
 
-        back_rank = [
+        # 2. Dynamic Back Rank Setup
+        # ---> THIS IS THE LIST THAT WENT MISSING! <---
+        base_back_rank = [
             chess_engine.PieceID.ROOK, chess_engine.PieceID.KNIGHT, chess_engine.PieceID.PONTIFF, chess_engine.PieceID.QUEEN,
             chess_engine.PieceID.KING, chess_engine.PieceID.PONTIFF, chess_engine.PieceID.KNIGHT, chess_engine.PieceID.ROOK
         ]
 
+        # Calculate padding needed (e.g., 10x10 needs 2 extra pieces)
+        padding_needed = size - 8
+        pad_left = padding_needed // 2
+        pad_right = padding_needed - pad_left
+        
+        # Pad the wings with Towers if the board is larger than 8x8
+        back_rank = [chess_engine.PieceID.TOWER] * pad_left + base_back_rank + [chess_engine.PieceID.TOWER] * pad_right
+
         for col, piece in enumerate(back_rank):
             b_idx = self.geo.coord_to_index(col, 0) 
-            w_idx = self.geo.coord_to_index(col, 7) 
+            w_idx = self.geo.coord_to_index(col, size - 1) 
             
             self.board.add_piece(chess_engine.Color.WHITE, piece, w_idx)
             self.board.add_piece(chess_engine.Color.BLACK, piece, b_idx)
@@ -373,6 +438,20 @@ class MainWindow(QMainWindow):
             self.info_panel.setText("❌ Illegal Move! Try again.")
             return
 
+        # --- UPDATE HIGHLIGHTS & GRAVEYARD BEFORE EXECUTING ---
+        self.canvas.last_move = (from_idx, to_idx)
+        
+        # THE FIX: Look directly at the board to see what is about to be captured
+        enemy_color = chess_engine.Color.BLACK if self.board.turn == chess_engine.Color.WHITE else chess_engine.Color.WHITE
+        captured = self.board.get_piece_at(to_idx, enemy_color)
+        
+        if captured != chess_engine.PieceID.EMPTY:
+            if self.board.turn == chess_engine.Color.WHITE:
+                self.bottom_graveyard.add_piece(captured)
+            else:
+                self.top_graveyard.add_piece(captured)
+
+        # Execute the move internally
         chess_engine.execute_move(self.board, self.geo, selected_move)
         self.canvas.update()
 
@@ -409,6 +488,20 @@ class MainWindow(QMainWindow):
         selected_move = next((m for m in legal_moves if m.get_from() == from_idx and m.get_to() == to_idx), None)
         
         if selected_move:
+            # --- UPDATE HIGHLIGHTS & GRAVEYARD BEFORE EXECUTING ---
+            self.canvas.last_move = (from_idx, to_idx)
+            
+            # THE FIX: Look directly at the board to see what the AI is about to capture
+            enemy_color = chess_engine.Color.BLACK if self.board.turn == chess_engine.Color.WHITE else chess_engine.Color.WHITE
+            captured = self.board.get_piece_at(to_idx, enemy_color)
+            
+            if captured != chess_engine.PieceID.EMPTY:
+                if self.board.turn == chess_engine.Color.WHITE:
+                    self.bottom_graveyard.add_piece(captured)
+                else:
+                    self.top_graveyard.add_piece(captured)
+
+            # Execute the AI's move on the REAL board
             chess_engine.execute_move(self.board, self.geo, selected_move)
             self.canvas.update()
             

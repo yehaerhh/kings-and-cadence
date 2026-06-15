@@ -181,7 +181,7 @@ namespace Engine::MoveGen {
                     moves.add(Move(from, push_to, PAWN));
                     
                     // 2. THE DOUBLE PUSH
-                    if ((us == WHITE && y == 6) || (us == BLACK && y == 1)) {
+                    if ((us == WHITE && y == geo.active_height-2) || (us == BLACK && y == 1)) {
                         int double_push = push_to + forward;
                         
                         if (geo.is_in_bounds(double_push) && 
@@ -579,7 +579,9 @@ namespace Engine::MoveGen {
     inline void generate_peasant_moves(const BoardState& board, const BoardGeometry& geo, MoveList& moves, Color color) {
         Bitboard192 peasants = board.pieces[color][PEASANT];
         int forward = (color == WHITE) ? -1 : 1;
-        int start_rank = (color == WHITE) ? 6 : 1;
+        
+        // THE FIX: Dynamic starting rank for White based on board height!
+        int start_rank = (color == WHITE) ? geo.active_height - 2 : 1;
         int prom_rank = (color == WHITE) ? 0 : geo.active_height - 1;
 
         while (peasants.popcount() > 0) {
@@ -640,13 +642,10 @@ namespace Engine::MoveGen {
                 
                 // EN PASSANT CAPTURE
                 // If the square straight ahead is the En Passant square (the square the enemy skipped)
-                // Note: Change `ep_square` to whatever your variable is actually named!
-                /*
-                if (eat_idx == board.ep_square) {
+                if (eat_idx == board.ep_target_index) {
                     moves.moves.push_back(Move(sq, eat_idx, PEASANT, PEASANT, FLAG_EN_PASSANT));
                     moves.macro_chains.push_back(std::vector<int>());
                 }
-                */
             }
         }
     }

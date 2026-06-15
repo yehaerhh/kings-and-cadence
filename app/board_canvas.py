@@ -198,3 +198,13 @@ class BoardCanvas(QWidget):
                 self.selected_idx = None
             
             self.update() # Snap back to grid
+        if event.button() == Qt.MouseButton.LeftButton and self.dragging:
+            self.dragging = False
+            idx = self._get_idx_from_pos(event.position())
+            
+            # If dragged to a new square, attempt the move
+            if idx != -1 and idx != self.selected_idx:
+                self.move_played.emit(self.selected_idx, idx)
+                self.selected_idx = None
+            
+            self.update() # Snap back to grid

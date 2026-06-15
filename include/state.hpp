@@ -212,7 +212,8 @@ namespace Engine {
             }
             else if (flag == FLAG_EN_PASSANT) {
                 add_piece(us, piece, to);
-                int backward = (us == WHITE) ? 12 : -12; 
+                // THE FIX: Dynamic backward stride for removing the captured piece
+                int backward = (us == WHITE) ? geo.active_width : -geo.active_width; 
                 remove_piece(them, captured, to + backward);
             }
             else if (flag == FLAG_CASTLE) {
@@ -240,8 +241,9 @@ namespace Engine {
                 }
                 add_piece(us, piece, to);
 
-                if (piece == PEASANT && std::abs(to - from) == 24) { 
-                    int backward = (us == WHITE) ? 12 : -12; 
+                // THE FIX: Dynamic stride check for creating the En Passant target
+                if (piece == PEASANT && std::abs(to - from) == (geo.active_width * 2)) { 
+                    int backward = (us == WHITE) ? geo.active_width : -geo.active_width; 
                     ep_target_index = to + backward; 
                 }
             }
@@ -249,10 +251,10 @@ namespace Engine {
             // 3. --- CASTLING RIGHTS DESTRUCTION ---
             // If the rights are already 0, skip this logic to save CPU time
             if (castling_rights != CASTLE_NONE) {
-                // Determine the starting indices for Kings and Rooks based on your geometry
-                int w_king = geo.coord_to_index(4, 7);
-                int w_rook_k = geo.coord_to_index(7, 7);
-                int w_rook_q = geo.coord_to_index(0, 7);
+                // THE FIX: Dynamically track White's back row based on active_height
+                int w_king = geo.coord_to_index(4, geo.active_height - 1);
+                int w_rook_k = geo.coord_to_index(7, geo.active_height - 1);
+                int w_rook_q = geo.coord_to_index(0, geo.active_height - 1);
                 
                 int b_king = geo.coord_to_index(4, 0);
                 int b_rook_k = geo.coord_to_index(7, 0);
